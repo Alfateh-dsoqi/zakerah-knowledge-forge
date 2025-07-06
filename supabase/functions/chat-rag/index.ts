@@ -29,7 +29,7 @@ serve(async (req) => {
     const queryEmbedding = await generateQueryEmbedding(message);
     
     // Step 2: Perform semantic search
-    const relevantContent = await searchKnowledgeBase(userId, queryEmbedding);
+    const relevantContent = await searchKnowledgeBase(userId, queryEmbedding, message);
     console.log('Found', relevantContent.length, 'relevant chunks');
 
     // Step 3: Generate response using RAG
@@ -75,35 +75,90 @@ async function generateQueryEmbedding(query: string) {
   }
 }
 
-async function searchKnowledgeBase(userId: string, queryEmbedding: number[]) {
+async function searchKnowledgeBase(userId: string, queryEmbedding: number[], originalQuery: string) {
   // Convert embedding array to PostgreSQL vector format
   const embeddingString = `[${queryEmbedding.join(',')}]`;
   
-  const { data, error } = await supabase.rpc('match_knowledge_embeddings', {
+  // First try with relaxed similarity threshold
+  const { data: vectorData, error: vectorError } = await supabase.rpc('match_knowledge_embeddings', {
     query_embedding: embeddingString,
-    match_threshold: 0.7,
-    match_count: 10,
+    match_threshold: 0.4, // Even more flexible threshold
+    match_count: 15, // More results
     user_id: userId
   });
 
-  if (error) {
-    console.error('Error searching knowledge base:', error);
-    // Fallback: get recent entries
+  let results = vectorData || [];
+  
+  // If we don't have enough results, try text search as fallback
+  if (results.length < 5) {
+    console.log('Vector search returned few results, adding text search fallback');
+    
+    // Extract keywords from the original query for text search
+    const searchTerms = originalQuery
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(term => term.length > 2)
+      .slice(0, 3) // Use top 3 keywords
+      .join('|'); // Use OR logic for keywords
+    
+    if (searchTerms) {
+      const { data: textData } = await supabase
+        .from('knowledge_entries')
+        .select(`
+          id,
+          content,
+          title,
+          knowledge_scopes!inner(name)
+        `)
+        .eq('user_id', userId)
+        .or(`title.ilike.%${searchTerms}%,content.ilike.%${searchTerms}%`)
+        .limit(10 - results.length);
+      
+      if (textData) {
+        // Convert text search results to match vector search format
+        const formattedTextData = textData.map(item => ({
+          id: item.id,
+          content_chunk: item.content.substring(0, 500), // First 500 chars
+          similarity: 0.3, // Lower similarity score for text matches
+          entry_id: item.id,
+          title: item.title,
+          scope_name: item.knowledge_scopes?.name || 'Unknown'
+        }));
+        
+        results = [...results, ...formattedTextData];
+      }
+    }
+  }
+  
+  // Final fallback if still no results
+  if (results.length === 0) {
+    console.log('No results from vector or text search, using recent entries');
     const { data: fallbackData } = await supabase
       .from('knowledge_entries')
       .select(`
+        id,
         content,
         title,
         knowledge_scopes(name)
       `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(8);
     
-    return fallbackData || [];
+    if (fallbackData) {
+      results = fallbackData.map(item => ({
+        id: item.id,
+        content_chunk: item.content.substring(0, 500),
+        similarity: 0.2,
+        entry_id: item.id,
+        title: item.title,
+        scope_name: item.knowledge_scopes?.name || 'Unknown'
+      }));
+    }
   }
 
-  return data || [];
+  return results;
 }
 
 async function generateRAGResponse(query: string, relevantContent: any[]) {
