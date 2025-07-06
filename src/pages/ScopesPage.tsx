@@ -79,30 +79,21 @@ export default function ScopesPage() {
   };
 
   const generateBrainstormingIdeas = async () => {
-    // Mock brainstorming ideas based on existing scopes
-    // In a real implementation, this would use AI to generate ideas
-    const mockIdeas: BrainstormingIdea[] = [
-      {
-        id: '1',
-        title: 'Cross-Domain Innovation Opportunities',
-        description: 'What if you combined insights from your Technology and Marketing knowledge? Consider how AI tools could revolutionize your marketing strategies.',
-        relatedScopes: ['Technology & AI', 'Marketing & Branding']
-      },
-      {
-        id: '2',
-        title: 'Leadership in the Digital Age',
-        description: 'Your business strategy and leadership insights could be synthesized to explore how digital transformation affects management styles.',
-        relatedScopes: ['Leadership & Management', 'Business Strategy']
-      },
-      {
-        id: '3',
-        title: 'Future Trends Analysis',
-        description: 'Connect patterns across your knowledge areas to predict emerging trends that could impact your industry.',
-        relatedScopes: ['General Knowledge', 'Technology & AI']
-      }
-    ];
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-brainstorming', {
+        body: { userId: user!.id }
+      });
 
-    setBrainstormingIdeas(mockIdeas);
+      if (error) {
+        console.error('Brainstorming function error:', error);
+        return;
+      }
+
+      setBrainstormingIdeas(data.ideas || []);
+    } catch (error) {
+      console.error('Error generating brainstorming ideas:', error);
+      // Keep the fallback ideas if the AI fails
+    }
   };
 
   const filteredScopes = scopes.filter(scope =>

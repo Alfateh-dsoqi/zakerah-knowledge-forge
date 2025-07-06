@@ -1,1 +1,10 @@
 project_id = "qnpbfynreellcxvoxqph"
+
+[functions.process-knowledge]
+verify_jwt = true
+
+[functions.chat-rag]
+verify_jwt = true
+
+[functions.generate-brainstorming]
+verify_jwt = true

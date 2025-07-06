@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -96,93 +97,22 @@ What would you like to explore from your knowledge universe?`,
   };
 
   const generateAIResponse = async (query: string): Promise<{ content: string; sources: string[] }> => {
-    // Mock delay to simulate AI processing
-    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
+    // Call the RAG edge function
+    const { data, error } = await supabase.functions.invoke('chat-rag', {
+      body: {
+        message: query,
+        userId: user!.id
+      }
+    });
 
-    // Mock responses based on query content
-    const queryLower = query.toLowerCase();
-    
-    if (queryLower.includes('summary') || queryLower.includes('summarize')) {
-      return {
-        content: `Based on your knowledge base, here's a summary of the key insights I found:
-
-**Main Themes:**
-• Technology and AI advancement trends
-• Leadership and management best practices  
-• Marketing strategy evolution
-• Business innovation patterns
-
-**Key Takeaways:**
-1. Digital transformation is accelerating across industries
-2. AI tools are becoming essential for competitive advantage
-3. Customer-centric approaches drive sustainable growth
-4. Remote leadership requires new skill sets
-
-This synthesis draws from ${Math.floor(Math.random() * 8) + 3} different knowledge entries in your database.`,
-        sources: ['Technology & AI', 'Leadership & Management', 'Marketing Strategy']
-      };
-    }
-    
-    if (queryLower.includes('ai') || queryLower.includes('artificial intelligence')) {
-      return {
-        content: `From your AI and technology knowledge entries, here are the key insights:
-
-**Current AI Trends:**
-• Large Language Models are transforming content creation
-• AI automation is reshaping traditional workflows  
-• Machine learning applications in business intelligence
-• Ethical AI considerations gaining importance
-
-**Implementation Strategies:**
-• Start with pilot projects to test AI tools
-• Focus on augmenting human capabilities rather than replacement
-• Invest in AI literacy across the organization
-• Establish clear AI governance frameworks
-
-Would you like me to dive deeper into any specific AI topic from your knowledge base?`,
-        sources: ['Technology & AI', 'Business Strategy']
-      };
-    }
-    
-    if (queryLower.includes('marketing') || queryLower.includes('brand')) {
-      return {
-        content: `Here's what I found in your marketing knowledge:
-
-**Modern Marketing Insights:**
-• Personalization at scale drives engagement
-• Content marketing builds long-term relationships
-• Data-driven decision making is essential
-• Multi-channel consistency strengthens brand identity
-
-**Emerging Trends:**
-• AI-powered customer segmentation
-• Interactive content experiences
-• Community-driven marketing approaches
-• Sustainable and purpose-driven messaging
-
-**Actionable Strategies:**
-1. Leverage customer data for targeted campaigns
-2. Create authentic, value-driven content
-3. Build communities around your brand
-4. Measure and optimize continuously
-
-This information comes from your stored marketing insights and industry analysis.`,
-        sources: ['Marketing & Branding', 'Business Strategy']
-      };
+    if (error) {
+      console.error('RAG function error:', error);
+      throw error;
     }
 
-    // Default response for general queries
     return {
-      content: `I searched through your knowledge base and found relevant information, but I'd like to provide you with the most accurate response possible. 
-
-Could you help me understand exactly what aspect you're most interested in? For example:
-• Are you looking for specific facts or data?
-• Do you want me to compare different concepts?
-• Would you like a summary of a particular topic?
-• Are you seeking actionable insights or recommendations?
-
-The more specific your question, the better I can search through your ${Math.floor(Math.random() * 20) + 5} knowledge entries to give you precisely what you need.`,
-      sources: ['General Knowledge']
+      content: data.response,
+      sources: data.sources || []
     };
   };
 

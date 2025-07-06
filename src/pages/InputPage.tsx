@@ -50,45 +50,25 @@ export default function InputPage() {
     setProcessing(true);
     setProcessingStages(stages.map(stage => ({ ...stage, completed: false })));
 
-    try {
-      // Stage 1: Content Analysis
-      updateStage('analyze', true);
-      await new Promise(resolve => setTimeout(resolve, 800));
+      try {
+        // All processing is now handled by the AI edge function
+        const result = await storeKnowledge({
+          title: title.trim(),
+          content: content.trim(),
+          sourceUrl: sourceUrl.trim() || null,
+          scopeName: '',
+          processedContent: {},
+          embeddings: []
+        });
 
-      // Stage 2: Determine Knowledge Scope
-      updateStage('scope', true);
-      const scopeName = await determineScope(content);
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      // Stage 3: Extract Insights
-      updateStage('extract', true);
-      const processedContent = await extractInsights(content);
-      await new Promise(resolve => setTimeout(resolve, 700));
-
-      // Stage 4: Create Embeddings
-      updateStage('embed', true);
-      const embeddings = await createEmbeddings(content);
-      await new Promise(resolve => setTimeout(resolve, 900));
-
-      // Stage 5: Store Knowledge
-      updateStage('store', true);
-      await storeKnowledge({
-        title: title.trim(),
-        content: content.trim(),
-        sourceUrl: sourceUrl.trim() || null,
-        scopeName,
-        processedContent,
-        embeddings
-      });
-
-      toast.success('Knowledge successfully added to your universe!');
-      
-      // Reset form
-      setContent('');
-      setTitle('');
-      setSourceUrl('');
-      
-    } catch (error) {
+        toast.success('Knowledge successfully added to your universe!');
+        
+        // Reset form
+        setContent('');
+        setTitle('');
+        setSourceUrl('');
+        
+      } catch (error) {
       console.error('Error processing knowledge:', error);
       toast.error('Failed to process knowledge. Please try again.');
     } finally {
@@ -105,49 +85,6 @@ export default function InputPage() {
     );
   };
 
-  const determineScope = async (content: string): Promise<string> => {
-    // Simple keyword-based scope determination
-    // In a real implementation, this would use AI
-    const contentLower = content.toLowerCase();
-    
-    if (contentLower.includes('marketing') || contentLower.includes('brand')) {
-      return 'Marketing & Branding';
-    } else if (contentLower.includes('technology') || contentLower.includes('ai') || contentLower.includes('software')) {
-      return 'Technology & AI';
-    } else if (contentLower.includes('leadership') || contentLower.includes('management')) {
-      return 'Leadership & Management';
-    } else if (contentLower.includes('business') || contentLower.includes('strategy')) {
-      return 'Business Strategy';
-    } else {
-      return 'General Knowledge';
-    }
-  };
-
-  const extractInsights = async (content: string) => {
-    // Simple insight extraction
-    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    const keyPoints = sentences.slice(0, 3).map(s => s.trim());
-    
-    return {
-      summary: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
-      keyPoints,
-      wordCount: content.split(/\s+/).length,
-      extractedAt: new Date().toISOString()
-    };
-  };
-
-  const createEmbeddings = async (content: string) => {
-    // Mock embedding creation - in real implementation, this would call an AI service
-    const chunks = content.match(/.{1,500}/g) || [content];
-    
-    return chunks.map((chunk, index) => ({
-      chunk,
-      index,
-      // Mock embedding vector - in reality, this would be from an embedding model
-      embedding: Array.from({ length: 768 }, () => Math.random() - 0.5)
-    }));
-  };
-
   const storeKnowledge = async (data: {
     title: string;
     content: string;
@@ -156,59 +93,20 @@ export default function InputPage() {
     processedContent: any;
     embeddings: any[];
   }) => {
-    // First, ensure the scope exists
-    let { data: scope } = await supabase
-      .from('knowledge_scopes')
-      .select('id')
-      .eq('user_id', user!.id)
-      .eq('name', data.scopeName)
-      .single();
-
-    if (!scope) {
-      const { data: newScope, error: scopeError } = await supabase
-        .from('knowledge_scopes')
-        .insert({
-          user_id: user!.id,
-          name: data.scopeName,
-          description: `Auto-generated scope for ${data.scopeName}`,
-        })
-        .select('id')
-        .single();
-
-      if (scopeError) throw scopeError;
-      scope = newScope;
-    }
-
-    // Insert the knowledge entry
-    const { data: entry, error: entryError } = await supabase
-      .from('knowledge_entries')
-      .insert({
-        user_id: user!.id,
-        scope_id: scope.id,
+    // Call the AI-powered processing edge function
+    const { data: result, error } = await supabase.functions.invoke('process-knowledge', {
+      body: {
         title: data.title,
         content: data.content,
-        source_url: data.sourceUrl,
-        processed_content: data.processedContent,
-      })
-      .select('id')
-      .single();
+        sourceUrl: data.sourceUrl,
+        userId: user!.id
+      }
+    });
 
-    if (entryError) throw entryError;
-
-    // Store embeddings
-    const embeddingInserts = data.embeddings.map(embedding => ({
-      entry_id: entry.id,
-      user_id: user!.id,
-      content_chunk: embedding.chunk,
-      embedding: embedding.embedding,
-      chunk_index: embedding.index,
-    }));
-
-    const { error: embeddingError } = await supabase
-      .from('embeddings')
-      .insert(embeddingInserts);
-
-    if (embeddingError) throw embeddingError;
+    if (error) throw error;
+    if (!result.success) throw new Error('Processing failed');
+    
+    return result;
   };
 
   return (
