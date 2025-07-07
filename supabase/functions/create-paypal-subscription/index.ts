@@ -89,10 +89,49 @@ serve(async (req) => {
     };
 
     const selectedPlan = plans[tier as keyof typeof plans];
+    logStep("Selected plan", selectedPlan);
 
-    // Create billing plan first
+    // Create product first
+    const productId = `ZAKERAH_${tier.toUpperCase()}_PRODUCT`;
+    const productPayload = {
+      id: productId,
+      name: selectedPlan.name,
+      description: selectedPlan.description,
+      type: "SERVICE",
+      category: "SOFTWARE"
+    };
+
+    logStep("Creating product", { productId });
+    
+    const productResponse = await fetch(`${paypalBaseUrl}/v1/catalogs/products`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(productPayload)
+    });
+
+    if (!productResponse.ok) {
+      const errorText = await productResponse.text();
+      logStep("Product creation response", { status: productResponse.status, error: errorText });
+      
+      // Check if product already exists
+      if (errorText.includes('DUPLICATE_RESOURCE_IDENTIFIER') || errorText.includes('already exists')) {
+        logStep("Product already exists, continuing");
+      } else {
+        throw new Error(`Failed to create PayPal product: ${errorText}`);
+      }
+    } else {
+      const productData = await productResponse.json();
+      logStep("PayPal product created successfully", { productId: productData.id });
+    }
+
+    // Create billing plan
     const billingPlanPayload = {
-      product_id: `zakerah-${tier}-product`,
+      product_id: productId,
       name: selectedPlan.name,
       description: selectedPlan.description,
       status: "ACTIVE",
@@ -120,43 +159,8 @@ serve(async (req) => {
       }
     };
 
-    // First create or get the product
-    const productPayload = {
-      id: `zakerah-${tier}-product`,
-      name: selectedPlan.name,
-      description: selectedPlan.description,
-      type: "SERVICE",
-      category: "SOFTWARE"
-    };
+    logStep("Creating billing plan", billingPlanPayload);
 
-    // Create product
-    const productResponse = await fetch(`${paypalBaseUrl}/v1/catalogs/products`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify(productPayload)
-    });
-
-    let productExists = false;
-    if (!productResponse.ok) {
-      const errorText = await productResponse.text();
-      // Check if product already exists
-      if (errorText.includes('DUPLICATE_RESOURCE_IDENTIFIER')) {
-        productExists = true;
-        logStep("Product already exists, continuing");
-      } else {
-        logStep("Product creation failed", { error: errorText });
-        throw new Error(`Failed to create PayPal product: ${errorText}`);
-      }
-    } else {
-      logStep("PayPal product created successfully");
-    }
-
-    // Create billing plan
     const planResponse = await fetch(`${paypalBaseUrl}/v1/billing/plans`, {
       method: 'POST',
       headers: {
@@ -168,17 +172,40 @@ serve(async (req) => {
       body: JSON.stringify(billingPlanPayload)
     });
 
-    let planId = `zakerah-${tier}-plan`;
+    let planId = null;
     if (!planResponse.ok) {
       const errorText = await planResponse.text();
-      // Check if plan already exists
-      if (errorText.includes('DUPLICATE_RESOURCE_IDENTIFIER')) {
-        logStep("Plan already exists, using existing plan");
-        // For existing plans, we'll use a predictable ID format
-        planId = `zakerah-${tier}-plan`;
-      } else {
-        logStep("Plan creation failed", { error: errorText });
-        throw new Error(`Failed to create PayPal plan: ${errorText}`);
+      logStep("Plan creation response", { status: planResponse.status, error: errorText });
+      
+      // Check if plan already exists - if so, list plans to find the existing one
+      if (errorText.includes('DUPLICATE_RESOURCE_IDENTIFIER') || errorText.includes('already exists')) {
+        logStep("Plan already exists, fetching existing plans");
+        
+        // List existing plans to find the one we need
+        const listPlansResponse = await fetch(`${paypalBaseUrl}/v1/billing/plans?product_id=${productId}&page_size=20`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+        
+        if (listPlansResponse.ok) {
+          const plansData = await listPlansResponse.json();
+          const existingPlan = plansData.plans?.find((p: any) => 
+            p.product_id === productId && p.status === 'ACTIVE'
+          );
+          
+          if (existingPlan) {
+            planId = existingPlan.id;
+            logStep("Found existing plan", { planId });
+          }
+        }
+      }
+      
+      if (!planId) {
+        throw new Error(`Failed to create or find PayPal plan: ${errorText}`);
       }
     } else {
       const planData = await planResponse.json();
