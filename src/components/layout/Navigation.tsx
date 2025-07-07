@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { BookOpen, MessageSquare, Search } from 'lucide-react';
+import { BookOpen, MessageSquare, Search, Crown } from 'lucide-react';
 
 export function Navigation() {
   const { user, signOut } = useAuth();
@@ -34,6 +34,12 @@ export function Navigation() {
       label: 'Chat', 
       icon: MessageSquare,
       description: 'AI assistant'
+    },
+    { 
+      path: '/subscription', 
+      label: 'Pro', 
+      icon: Crown,
+      description: 'Upgrade plan'
     },
   ];
 
