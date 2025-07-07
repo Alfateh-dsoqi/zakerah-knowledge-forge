@@ -8,12 +8,3 @@ verify_jwt = true
 
 [functions.generate-brainstorming]
 verify_jwt = true
-
-[functions.create-paypal-subscription]
-verify_jwt = true
-
-[functions.check-paypal-subscription]
-verify_jwt = true
-
-[functions.paypal-webhook]
-verify_jwt = false

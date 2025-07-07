@@ -10,9 +10,6 @@ import Dashboard from "./pages/Dashboard";
 import InputPage from "./pages/InputPage";
 import ScopesPage from "./pages/ScopesPage";
 import ChatPage from "./pages/ChatPage";
-import SubscriptionPage from "./pages/SubscriptionPage";
-import SubscriptionSuccess from "./pages/SubscriptionSuccess";
-import SubscriptionCancelled from "./pages/SubscriptionCancelled";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,9 +27,6 @@ const App = () => (
             <Route path="/input" element={<AppLayout><InputPage /></AppLayout>} />
             <Route path="/scopes" element={<AppLayout><ScopesPage /></AppLayout>} />
             <Route path="/chat" element={<AppLayout><ChatPage /></AppLayout>} />
-            <Route path="/subscription" element={<AppLayout><SubscriptionPage /></AppLayout>} />
-            <Route path="/subscription-success" element={<AppLayout><SubscriptionSuccess /></AppLayout>} />
-            <Route path="/subscription-cancelled" element={<AppLayout><SubscriptionCancelled /></AppLayout>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
