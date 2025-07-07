@@ -90,9 +90,105 @@ serve(async (req) => {
 
     const selectedPlan = plans[tier as keyof typeof plans];
 
+    // Create billing plan first
+    const billingPlanPayload = {
+      product_id: `zakerah-${tier}-product`,
+      name: selectedPlan.name,
+      description: selectedPlan.description,
+      status: "ACTIVE",
+      billing_cycles: [
+        {
+          frequency: {
+            interval_unit: "MONTH",
+            interval_count: 1
+          },
+          tenure_type: "REGULAR",
+          sequence: 1,
+          total_cycles: 0, // Infinite cycles
+          pricing_scheme: {
+            fixed_price: {
+              value: selectedPlan.amount,
+              currency_code: selectedPlan.currency
+            }
+          }
+        }
+      ],
+      payment_preferences: {
+        auto_bill_outstanding: true,
+        setup_fee_failure_action: "CONTINUE",
+        payment_failure_threshold: 3
+      }
+    };
+
+    // First create or get the product
+    const productPayload = {
+      id: `zakerah-${tier}-product`,
+      name: selectedPlan.name,
+      description: selectedPlan.description,
+      type: "SERVICE",
+      category: "SOFTWARE"
+    };
+
+    // Create product
+    const productResponse = await fetch(`${paypalBaseUrl}/v1/catalogs/products`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(productPayload)
+    });
+
+    let productExists = false;
+    if (!productResponse.ok) {
+      const errorText = await productResponse.text();
+      // Check if product already exists
+      if (errorText.includes('DUPLICATE_RESOURCE_IDENTIFIER')) {
+        productExists = true;
+        logStep("Product already exists, continuing");
+      } else {
+        logStep("Product creation failed", { error: errorText });
+        throw new Error(`Failed to create PayPal product: ${errorText}`);
+      }
+    } else {
+      logStep("PayPal product created successfully");
+    }
+
+    // Create billing plan
+    const planResponse = await fetch(`${paypalBaseUrl}/v1/billing/plans`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(billingPlanPayload)
+    });
+
+    let planId = `zakerah-${tier}-plan`;
+    if (!planResponse.ok) {
+      const errorText = await planResponse.text();
+      // Check if plan already exists
+      if (errorText.includes('DUPLICATE_RESOURCE_IDENTIFIER')) {
+        logStep("Plan already exists, using existing plan");
+        // For existing plans, we'll use a predictable ID format
+        planId = `zakerah-${tier}-plan`;
+      } else {
+        logStep("Plan creation failed", { error: errorText });
+        throw new Error(`Failed to create PayPal plan: ${errorText}`);
+      }
+    } else {
+      const planData = await planResponse.json();
+      planId = planData.id;
+      logStep("PayPal plan created successfully", { planId });
+    }
+
     // Create PayPal subscription
     const subscriptionPayload = {
-      plan_id: `zakerah-${tier}-monthly`, // You'll need to create these plans in PayPal dashboard
+      plan_id: planId,
       subscriber: {
         email_address: user.email,
         name: {
